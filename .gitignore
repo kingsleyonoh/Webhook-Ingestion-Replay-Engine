@@ -1,0 +1,51 @@
+# AI Workflow System (proprietary — do not publish)
+.agent/workflows/
+.agent/guides/
+
+# Internal project planning
+docs/progress.md
+docs/architect_journal.md
+docs/*PRD*.md
+docs/*prd*.md
+
+# Multi-agent platform context (auto-generated, not committed)
+CLAUDE.md
+.claude/
+AGENTS.md
+.cursorrules
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker volumes
+postgres-data/
+redis-data/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
