@@ -1,0 +1,80 @@
+# Production deployment with Traefik reverse proxy
+# Deploy: docker compose -f docker-compose.prod.yml up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: webhook-ingestion-engine
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - traefik-public
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webhook-ingestion-engine.rule=Host(`webhooks.kingsleyonoh.com`)"
+      - "traefik.http.routers.webhook-ingestion-engine.entrypoints=websecure"
+      - "traefik.http.routers.webhook-ingestion-engine.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webhook-ingestion-engine.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: webhook-ingestion-engine-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: webhooks
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: webhook-ingestion-engine-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  traefik-public:
+    external: true
+  internal:
+    driver: bridge
