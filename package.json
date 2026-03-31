@@ -1,0 +1,38 @@
+{
+  "name": "webhook-ingestion-engine",
+  "version": "0.1.0",
+  "description": "Platform-grade webhook gateway with signature verification, at-least-once delivery, and replay",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:watch": "vitest",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "dotenv": "^16.4.0",
+    "drizzle-orm": "^0.38.0",
+    "fastify": "^5.0.0",
+    "ioredis": "^5.4.0",
+    "pino": "^9.0.0",
+    "postgres": "^3.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/supertest": "^6.0.0",
+    "drizzle-kit": "^0.30.0",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
