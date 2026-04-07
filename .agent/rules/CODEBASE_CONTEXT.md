@@ -1,6 +1,6 @@
 # Webhook Ingestion Engine — Codebase Context
 
-> Last updated: 2026-03-31
+> Last updated: 2026-04-01
 > Template synced: 2026-03-31
 
 ## Tech Stack
@@ -132,13 +132,27 @@ tests/
 - Delivery: Persist-before-process, at-least-once delivery via BullMQ
 - Source config: Source-agnostic — adding a source is a DB insert, not a code change
 
+### Request-Scoped Caching (Shared Cached Helpers)
+
+Expensive lookups (auth/tenant resolution, source config) are resolved **once per request**, not per handler:
+
+- **Tenant context:** Auth middleware resolves `X-API-Key` → `tenantId` and attaches to `request.tenantId` via Fastify decorator. All downstream handlers read from the decorator — never re-query.
+- **Source config:** Cached in Redis (TTL 60s). Ingestion handler reads from cache; cache miss fetches from DB and populates. Source update API invalidates the cache entry.
+- **Pattern:** Middleware sets context → handlers consume it. No handler should perform its own tenant or source lookup.
+
+### Data Fetching Strategy
+
+- **Prefer joins over N+1 queries:** Use Drizzle relational queries or explicit joins when loading related data (e.g., event + deliveries, source + destinations). One round-trip beats N sequential queries.
+- **Independent queries in parallel:** When a handler needs data from unrelated tables (e.g., stats from events + deliveries + sources), use `Promise.all` — never sequential awaits for independent operations.
+- **Request-scoped tenant context:** `request.tenantId` is always available after auth middleware. Every query includes `WHERE tenant_id = ?` — this is enforced by convention, not by a query wrapper.
+
 ## Gotchas & Lessons Learned
 
 > Discovered during implementation. Added automatically by `/implement-next` Step 9.3.
 
 | Date | Area | Gotcha | Discovered In |
 |------|------|--------|---------------|
-| | | | |
+| 2026-04-01 | config | Docker PostgreSQL mapped to port 5450 (not 5432) to avoid conflict with native PostgreSQL service on Windows | Testing infrastructure setup |
 
 ## Shared Foundation (MUST READ before any implementation)
 
@@ -156,6 +170,9 @@ tests/
 | Error handler | `src/api/middleware/error-handler.ts` | Standard error response format |
 | Rate limiter | `src/api/middleware/rate-limit.ts` | Per-endpoint rate limiting |
 | Queue | `src/delivery/queue.ts` | BullMQ queue configuration |
+| Test DB helper | `tests/helpers/db.ts` | PostgreSQL test connection with lifecycle management |
+| Test Redis helper | `tests/helpers/redis.ts` | Redis test connection with lifecycle management |
+| Test setup | `tests/helpers/setup.ts` | Global test setup — loads `.env` for all test runs |
 
 ## Deep References
 

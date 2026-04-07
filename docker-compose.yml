@@ -6,7 +6,7 @@ services:
     image: postgres:16-alpine
     container_name: webhook-engine-postgres
     ports:
-      - "5432:5432"
+      - "5450:5432"
     environment:
       POSTGRES_DB: webhooks
       POSTGRES_USER: postgres
