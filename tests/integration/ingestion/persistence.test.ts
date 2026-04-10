@@ -22,10 +22,11 @@ describe("Event persistence + idempotency (integration)", () => {
     app = await buildApp();
     await app.ready();
 
-    // Create test tenant
+    // Create test tenant with unique API key per run
+    const uniqueApiKey = `persist-test-api-key-${Date.now()}-${crypto.randomUUID()}`;
     const apiKeyHash = crypto
       .createHash("sha256")
-      .update("persist-test-api-key")
+      .update(uniqueApiKey)
       .digest("hex");
 
     const tenantResult = await db.sql`

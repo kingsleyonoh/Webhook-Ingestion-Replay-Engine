@@ -28,10 +28,11 @@ describe("POST /webhooks/:sourceSlug (integration)", () => {
     app = await buildApp();
     await app.ready();
 
-    // Create a test tenant
+    // Create a test tenant with unique API key per run
+    const uniqueApiKey = `test-api-key-handler-${Date.now()}-${crypto.randomUUID()}`;
     const apiKeyHash = crypto
       .createHash("sha256")
-      .update("test-api-key-handler")
+      .update(uniqueApiKey)
       .digest("hex");
 
     const tenantResult = await db.sql`
