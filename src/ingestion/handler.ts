@@ -34,10 +34,14 @@ import {
   SourceNotFoundError,
   SignatureInvalidError,
   PayloadTooLargeError,
+  QueueOverloadError,
 } from "../lib/errors.js";
 import { loadConfig } from "../config.js";
 import { logger } from "../lib/logger.js";
 import type { Queue } from "bullmq";
+
+/** Maximum queue depth before rejecting incoming webhooks (Section 10b) */
+const BACKPRESSURE_MAX_QUEUE_DEPTH = 10_000;
 
 interface WebhookParams {
   sourceSlug: string;
@@ -85,6 +89,24 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         throw new PayloadTooLargeError(
           rawBody.length,
           config.maxPayloadBytes
+        );
+      }
+
+      // Step 3b: Backpressure check — reject if queue is overloaded (Section 10b)
+      const jobCounts = await deliverQueue.getJobCounts(
+        "waiting",
+        "active"
+      );
+      const queueDepth =
+        (jobCounts.waiting ?? 0) + (jobCounts.active ?? 0);
+      if (queueDepth > BACKPRESSURE_MAX_QUEUE_DEPTH) {
+        reqLogger.warn(
+          { queueDepth, maxDepth: BACKPRESSURE_MAX_QUEUE_DEPTH },
+          "Queue backpressure — rejecting webhook"
+        );
+        throw new QueueOverloadError(
+          queueDepth,
+          BACKPRESSURE_MAX_QUEUE_DEPTH
         );
       }
 

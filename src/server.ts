@@ -14,6 +14,7 @@ import healthRoutes from "./api/health.routes.js";
 import sourceRoutes from "./api/sources.routes.js";
 import destinationRoutes from "./api/destinations.routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
+import { setupGracefulShutdown } from "./shutdown.js";
 
 /**
  * Declare the tenantId request decorator type.
@@ -123,6 +124,9 @@ async function start(): Promise<void> {
   const host = process.env["HOST"] ?? "0.0.0.0";
 
   const app = await buildApp();
+
+  // Register graceful shutdown handlers
+  setupGracefulShutdown({ app });
 
   try {
     await app.listen({ port, host });
