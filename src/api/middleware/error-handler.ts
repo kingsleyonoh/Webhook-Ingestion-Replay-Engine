@@ -26,6 +26,32 @@ async function errorHandler(fastify: FastifyInstance): Promise<void> {
         return reply.status(error.statusCode).send(error.toJSON());
       }
 
+      // Fastify errors with statusCode (e.g., body too large, validation)
+      const fastifyErr = error as {
+        statusCode?: number;
+        code?: string;
+      };
+      if (fastifyErr.statusCode && fastifyErr.statusCode !== 500) {
+        const statusCode = fastifyErr.statusCode;
+        const errCode =
+          statusCode === 413
+            ? "PAYLOAD_TOO_LARGE"
+            : fastifyErr.code ?? "REQUEST_ERROR";
+
+        reqLogger.warn(
+          { code: errCode, statusCode },
+          error.message
+        );
+
+        return reply.status(statusCode).send({
+          error: {
+            code: errCode,
+            message: error.message,
+            details: [],
+          },
+        });
+      }
+
       // Unknown errors — log full details, return safe message
       reqLogger.error(
         { err: error },

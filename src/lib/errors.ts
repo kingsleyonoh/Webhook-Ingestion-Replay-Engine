@@ -134,3 +134,14 @@ export class DuplicateTenantError extends AppError {
     this.name = "DuplicateTenantError";
   }
 }
+
+export class DuplicateSourceError extends AppError {
+  constructor(slug: string) {
+    super(
+      "DUPLICATE_SOURCE",
+      `A source with the slug '${slug}' already exists for this tenant`,
+      409
+    );
+    this.name = "DuplicateSourceError";
+  }
+}

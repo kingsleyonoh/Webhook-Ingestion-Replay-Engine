@@ -11,6 +11,7 @@ import { errorHandlerPlugin } from "./api/middleware/error-handler.js";
 import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
 import tenantRoutes from "./api/tenants.routes.js";
 import healthRoutes from "./api/health.routes.js";
+import sourceRoutes from "./api/sources.routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
 
 /**
@@ -68,6 +69,10 @@ function registerRawBodyParser(app: FastifyInstance): void {
  */
 export async function buildApp(): Promise<FastifyInstance> {
   const logLevel = process.env["LOG_LEVEL"] ?? "info";
+  const maxPayloadBytes = parseInt(
+    process.env["MAX_PAYLOAD_BYTES"] ?? "1048576",
+    10
+  );
 
   const app = Fastify({
     logger: {
@@ -75,6 +80,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     },
     requestIdHeader: "x-request-id",
     genReqId: () => crypto.randomUUID(),
+    bodyLimit: maxPayloadBytes,
   });
 
   // Decorate request with tenantId (default empty — set by auth middleware)
@@ -94,6 +100,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register tenant routes (register = public, me = authenticated)
   await app.register(tenantRoutes);
+
+  // Register source management routes (authenticated)
+  await app.register(sourceRoutes);
 
   // Register webhook ingestion route (public, HMAC signature auth)
   await app.register(ingestionPlugin);
