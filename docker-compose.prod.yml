@@ -11,6 +11,9 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/webhooks
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy

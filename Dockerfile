@@ -7,8 +7,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Copy source
-COPY . .
+# Copy TypeScript config and source
+COPY tsconfig.json ./
+COPY src/ ./src/
 
 # Build TypeScript
 RUN npm run build
@@ -21,11 +22,16 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
-# Copy only what's needed from builder
-COPY --from=builder /app/node_modules ./node_modules
+# Copy package files and install production-only deps
+COPY package*.json ./
+RUN npm ci --omit=dev
+
+# Copy compiled output from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/package.json ./
-COPY --from=builder /app/drizzle.config.ts ./
+
+# Copy migration files for drizzle-kit migrate
+COPY --from=builder /app/src/db/migrations ./src/db/migrations
+COPY drizzle.config.ts ./
 
 # Switch to non-root
 USER appuser
