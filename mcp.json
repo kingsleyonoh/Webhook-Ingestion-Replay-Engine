@@ -1,0 +1,7 @@
+{
+  "name": "webhook-ingestion-engine",
+  "version": "0.1.0",
+  "description": "Platform-grade webhook gateway with signature verification, at-least-once delivery, and replay",
+  "transport": "stdio",
+  "tools": []
+}

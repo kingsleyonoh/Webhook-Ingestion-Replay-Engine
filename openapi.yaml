@@ -1,0 +1,186 @@
+# OpenAPI 3.1 — Webhook Ingestion & Replay Engine
+openapi: "3.1.0"
+info:
+  title: "Webhook Ingestion & Replay Engine API"
+  description: "Platform-grade webhook gateway with signature verification, at-least-once delivery, and replay"
+  version: "0.1.0"
+  contact:
+    name: Kingsley Onoh
+    url: https://kingsleyonoh.com
+servers:
+  - url: http://localhost:3000
+    description: Local development
+  - url: https://webhooks.kingsleyonoh.com
+    description: Production
+paths:
+  /webhooks/{sourceSlug}:
+    post:
+      summary: Ingest a webhook from a configured source
+      tags: [Webhooks]
+      security:
+        - HMACSignature: []
+      parameters:
+        - name: sourceSlug
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: "Accepted (delivery queued)" }
+        "401": { description: "Invalid signature" }
+        "404": { description: "Source not found or disabled" }
+        "413": { description: "Payload too large (> 1MB)" }
+        "429": { description: "Backpressure (queue depth > 10000)" }
+  /api/tenants/register:
+    post:
+      summary: Self-register a tenant
+      tags: [Tenants]
+      responses:
+        "201": { description: "Tenant created with API key (shown once)" }
+  /api/tenants/me:
+    get:
+      summary: Get current tenant profile
+      tags: [Tenants]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "Tenant profile" }
+  /api/sources:
+    post:
+      summary: Register a webhook source
+      tags: [Sources]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "201": { description: "Source created" }
+    get:
+      summary: List sources with delivery stats
+      tags: [Sources]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "List of sources" }
+  /api/sources/{id}:
+    put:
+      summary: Update source config
+      tags: [Sources]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: "Source updated" }
+  /api/sources/{id}/destinations:
+    post:
+      summary: Add a delivery destination
+      tags: [Destinations]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "201": { description: "Destination created" }
+  /api/sources/{id}/destinations/{destId}:
+    delete:
+      summary: Remove a destination
+      tags: [Destinations]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: destId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "204": { description: "Destination deleted" }
+  /api/events:
+    get:
+      summary: List events with filters and cursor pagination
+      tags: [Events]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "Events list" }
+  /api/events/{id}:
+    get:
+      summary: Get event with all delivery attempts
+      tags: [Events]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: "Event details" }
+  /api/replays:
+    post:
+      summary: Create a replay request
+      tags: [Replay]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "201": { description: "Replay request created" }
+  /api/dead-letters:
+    get:
+      summary: List dead-lettered deliveries
+      tags: [Dead Letters]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "Dead letters list" }
+  /api/dead-letters/{id}/retry:
+    post:
+      summary: Retry a single dead letter
+      tags: [Dead Letters]
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: "Re-enqueued" }
+  /api/dead-letters/bulk-retry:
+    post:
+      summary: Bulk retry matching dead letters
+      tags: [Dead Letters]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "Bulk re-enqueued with count" }
+  /api/health:
+    get:
+      summary: Health check (DB, Redis, queue depth)
+      tags: [Observability]
+      responses:
+        "200": { description: "Healthy" }
+  /api/stats:
+    get:
+      summary: Aggregate stats (sources, events today, success rate)
+      tags: [Observability]
+      security:
+        - ApiKeyAuth: []
+      responses:
+        "200": { description: "Stats payload" }
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    HMACSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature

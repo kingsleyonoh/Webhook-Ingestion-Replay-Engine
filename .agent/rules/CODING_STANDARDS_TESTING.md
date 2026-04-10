@@ -1,6 +1,7 @@
-# Webhook Ingestion Engine — Coding Standards: Testing
+# Webhook Ingestion Engine — Coding Standards: Testing (Core TDD)
 
-> Part 2 of 3. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_DOMAIN.md`
+> Part 2 of 4. Also loaded: `CODING_STANDARDS.md`, `CODING_STANDARDS_TESTING_LIVE.md`, `CODING_STANDARDS_DOMAIN.md`
+> This file covers core TDD discipline. For mock policy, integration, and E2E testing → see `CODING_STANDARDS_TESTING_LIVE.md`.
 
 ## Testing Rules — Anti-Cheat (CRITICAL)
 
@@ -76,89 +77,13 @@ Before moving from RED → GREEN, verify ALL applicable categories have tests:
 2. **Max 300 lines per test file** — split if larger
 3. **`setUp` creates only what that class needs** — no global fixtures
 4. **Tests are independent** — no shared state, no ordering dependency
-5. **Any single test can run in isolation** — `python -m pytest tests/test_x.py::TestClass::test_method`
+5. **Any single test can run in isolation** — `vitest run tests/path/to/test.test.ts`
 6. **Test names describe business behavior** — not technical actions
-7. **No test helpers longer than 10 lines** — extract to a `tests/factories.py` if needed
+7. **No test helpers longer than 10 lines** — extract to a `tests/factories.ts` if needed
 
 ## Business-Context Testing
 - Tests must reflect the BUSINESS PURPOSE described in the spec.
 - Every test must answer: Does this protect data? Apply rules correctly? Handle failure? Match the spec?
 - Test names must describe business behavior, not technical actions.
 
-## Live Integration Testing (Mock Policy)
-
-### The Rule: Don't Mock What You Own
-If you control the service and can run it locally → test against the real thing.
-
-### Service Fallback Hierarchy
-When deciding how to test a service, follow this order:
-1. **Local instance** (best) — Docker, CLI, emulator on your machine
-2. **Cloud dev instance** (good) — dedicated test project / staging environment
-3. **Mock** (last resort) — only when options 1 and 2 are impossible
-
-### Test LIVE (Never Mock)
-- Your database (local PostgreSQL, local Redis) — validates schema, column names, constraints, query behavior
-- Your own API endpoints — call the actual route, not a stub
-- Your own server actions / business logic — test the real function
-- File storage you control (local filesystem, local object storage)
-
-### Mock ONLY These
-- Third-party payment APIs (Stripe charges money)
-- Email/SMS delivery (SendGrid/Twilio sends messages)
-- Rate-limited external APIs you don't control
-- Services with irreversible side effects
-- Cloud-only services with no local emulator AND no dev tier
-
-### No Services? No Problem
-If the project has no external services (CLI tool, library, static site), this policy doesn't apply — just write standard unit tests.
-
-### Why This Matters
-A mock that returns `{ user_id: 1 }` will pass even when the real column is `userId`. A mock that returns success will pass even when the real constraint rejects your data. Mocks test your ASSUMPTIONS about the service. Live tests test REALITY.
-
-### Common Mock Violations (DO NOT DO THESE)
-- ❌ Mocking your database client to return fake rows — hit the real database
-- ❌ Mocking your own API routes with `nock`/`msw` — call the real endpoint via test client
-- ❌ Using an in-memory SQLite when production uses PostgreSQL — use the real PostgreSQL
-- ❌ Mocking Redis/cache when it's running in Docker — connect to the real instance
-- ✅ Mocking Stripe's charge API — you don't want to charge real money in tests
-- ✅ Mocking SendGrid — you don't want to send real emails in tests
-- ✅ Mocking an external API with rate limits — you don't control their uptime
-
-### Test Cleanup
-- Each test MUST clean up after itself (delete rows, reset state)
-- Use transactions with rollback when possible for speed
-
-## Backend API & Integration Testing
-
-### When to Write API Integration Tests
-- Every **API endpoint**: test request → response cycle with real HTTP semantics
-- Every **BullMQ worker/handler**: test job processing with real Redis + PostgreSQL
-- Every **background job**: test job execution with actual service dependencies
-- Every **middleware**: test request interception, auth guards, validation layers
-
-### What to Test
-| Priority | Test This | Example |
-|----------|-----------|---------|
-| 1 | Request/response cycle | POST /api/sources → 201, returns created source |
-| 2 | Input validation | Missing required field → 400 with specific error |
-| 3 | Auth & authorization | No API key → 401; inactive tenant → 403 |
-| 4 | Error handling | Invalid ID → 404; duplicate slug → 409 |
-| 5 | Edge cases | Empty body, oversized payload, duplicate idempotency key |
-| 6 | Tenant isolation | Tenant A cannot see Tenant B's sources/events/deliveries |
-
-### API Testing Patterns
-- Use Fastify `inject()` for API integration tests — no network needed
-- Test full request lifecycle — serialization, middleware, handler, response
-- Assert on status codes, response body structure, AND headers where relevant
-- Test pagination, filtering, and cursor-based pagination with real DB rows
-
-### BullMQ Worker Testing
-- Enqueue test jobs to a real local Redis instance
-- Assert the worker processes them correctly (DB writes, HTTP delivery attempts)
-- Test error handling: malformed jobs, destination timeouts, retry exhaustion
-- Mock only external destination URLs (use `nock` or `msw` for outbound HTTP)
-
-### File Naming & Location
-- Name: `module-name.test.ts` — in `tests/unit/` or `tests/integration/` mirror
-- Group shared test helpers in `tests/helpers/`
-- Webhook payload fixtures in `tests/fixtures/{stripe,github,shopify}/`
+> **Integration, E2E, and Mock Policy rules** → see `CODING_STANDARDS_TESTING_LIVE.md` (Part 3 of 4).

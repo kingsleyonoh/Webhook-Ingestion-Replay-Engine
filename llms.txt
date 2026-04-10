@@ -1,0 +1,82 @@
+# Webhook Ingestion & Replay Engine
+
+> Platform-grade webhook gateway that receives inbound webhooks from any source, validates signatures, persists payloads to PostgreSQL, and delivers them to configured downstream endpoints with guaranteed at-least-once delivery.
+
+## What This Does
+
+A single system to receive, persist, deliver, and replay webhooks from any source (Stripe, GitHub, Shopify, or arbitrary services). Features HMAC signature verification, exponential-backoff retries, dead-letter queue for failed deliveries, and an HTTP replay API for re-processing historical events. Operations teams get one gateway to monitor all inbound webhook traffic instead of building retry logic into every consuming service.
+
+## Who This Is For
+
+- Platform engineers consolidating webhook handling across multiple services
+- Teams building event-driven architectures who need durable webhook ingestion
+- Operations teams that need an audit trail and replay capability for failed deliveries
+
+## Quick Start
+
+1. Clone: `git clone https://github.com/kingsleyonoh/Webhook-Ingestion-Replay-Engine`
+2. Install: `npm install`
+3. Configure: `cp .env.example .env` — fill in required values
+4. Start services: `docker compose up -d`
+5. Run migrations: `npx drizzle-kit migrate`
+6. Seed default tenant: `npm run seed`
+7. Run: `npm run dev`
+
+## API Surface
+
+**Webhook ingestion (no auth, HMAC signature):**
+- `POST /webhooks/:sourceSlug` — Receive a webhook from a configured source
+
+**Tenant management:**
+- `POST /api/tenants/register` — Self-register a tenant (returns API key)
+- `GET /api/tenants/me` — Get current tenant profile
+
+**Source & destination management (X-API-Key auth):**
+- `POST /api/sources` — Register a webhook source
+- `GET /api/sources` — List sources with delivery stats
+- `PUT /api/sources/:id` — Update source config
+- `POST /api/sources/:id/destinations` — Add a delivery destination
+- `DELETE /api/sources/:id/destinations/:destId` — Remove a destination
+
+**Event inspection:**
+- `GET /api/events` — List events with filters and cursor pagination
+- `GET /api/events/:id` — Get event with all delivery attempts
+
+**Replay:**
+- `POST /api/replays` — Re-process historical events through delivery pipeline
+
+**Dead letters:**
+- `GET /api/dead-letters` — List dead-lettered deliveries
+- `POST /api/dead-letters/:id/retry` — Retry a single dead letter
+- `POST /api/dead-letters/bulk-retry` — Bulk retry matching dead letters
+
+**Observability:**
+- `GET /api/health` — Health check (DB, Redis, queue depth)
+- `GET /api/stats` — Source counts, delivery success rate, dead letter counts
+
+## Integration
+
+**Inbound:** Any external service that sends webhooks (Stripe, GitHub, Shopify, custom apps). Source-agnostic — adding a new source is a database insert, not a code change.
+
+**Outbound (optional ecosystem destinations):**
+- Event-Driven Notification Hub — `POST /api/notifications/send`
+- Workflow Automation Engine — `POST /webhooks/:path`
+
+Both are configured by adding rows to the `destinations` table — no code changes required.
+
+## Architecture
+
+- **Persist before processing** — every webhook is written to PostgreSQL before any delivery attempt
+- **At-least-once delivery** — BullMQ-backed delivery worker with exponential backoff retries
+- **Source-agnostic** — signature verification config (HMAC-SHA256, HMAC-SHA1, none) lives in the database
+- **Multi-tenant** — every resource is scoped to a tenant via API key auth
+- **Dead-letter queue** — failed deliveries past max retries are inspected and replayed via REST API
+
+Stack: TypeScript 5.x (strict), Node.js 22 LTS, Fastify 5.x, PostgreSQL 16, Drizzle ORM, BullMQ 5.x, Redis 7, Vitest. Deployed via Docker on Hetzner VPS behind Traefik.
+
+## Source
+
+- Repository: https://github.com/kingsleyonoh/Webhook-Ingestion-Replay-Engine
+- Documentation: ./README.md
+- API spec: ./openapi.yaml
+- Agent context: ./AGENTS.md

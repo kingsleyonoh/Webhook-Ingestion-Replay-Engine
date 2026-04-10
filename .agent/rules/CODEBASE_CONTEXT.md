@@ -1,7 +1,7 @@
 # Webhook Ingestion Engine — Codebase Context
 
-> Last updated: 2026-04-01
-> Template synced: 2026-03-31
+> Last updated: 2026-04-10
+> Template synced: 2026-04-10
 
 ## Tech Stack
 
@@ -108,6 +108,7 @@ tests/
 | Run all tests | `npm test` |
 | Run unit tests | `npm run test:unit` |
 | Run integration tests | `npm run test:integration` |
+| Run E2E tests | `npm run test:e2e` |
 | Lint/check | `npx tsc --noEmit` |
 | Build | `npm run build` |
 | Migrate DB | `npx drizzle-kit migrate` |

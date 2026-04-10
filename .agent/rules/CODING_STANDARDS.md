@@ -1,6 +1,6 @@
 # Webhook Ingestion Engine — Coding Standards
 
-> Part 1 of 3. Also loaded: `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_DOMAIN.md`
+> Part 1 of 4. Also loaded: `CODING_STANDARDS_TESTING.md`, `CODING_STANDARDS_TESTING_LIVE.md`, `CODING_STANDARDS_DOMAIN.md`
 
 These rules are ALWAYS ACTIVE. Follow them on every response without being asked.
 
@@ -142,6 +142,13 @@ chore(workflows): customize implement-next for Fastify stack
 - **NEVER say "done" or "all tests pass" without actually running the tests** and showing the output.
 - **NEVER say "this follows the spec" without having read the relevant section** in this session.
 - If you haven't read a file in this conversation, you don't know what's in it. Read it first.
+
+### Respect .gitignore (CRITICAL — Prevents Accidental Exposure)
+- **NEVER run `git add -f` on ANY file.** If a file is gitignored, it is gitignored ON PURPOSE.
+- `docs/progress.md`, `docs/build-journal.md`, `docs/architect_journal.md`, `.agent/workflows/`, `.agent/guides/`, `.agent/agents/`, `.agent/.last-sync`, `.yolo/`, and PRD files are LOCAL working files. They must NEVER be committed.
+- **Proprietary files are tracked during development** so all platforms can reference them. `.gitignore` has commented-out entries marked `⚠️ TRACKED DURING DEV` — this is the default. Run `/prepare-public` before making the repo public.
+- If `git status` doesn't show a file as staged after `git add .`, that means `.gitignore` is working correctly. **Do not "fix" it.**
+- The ONLY acceptable staging command is `git add .` (which respects `.gitignore`).
 
 ### Full Read Rule (CRITICAL — Prevents Context Loss)
 - **When ANY workflow instructs you to "read" a file, you MUST read the ENTIRE file from first line to last line.**
