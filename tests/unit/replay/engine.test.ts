@@ -260,11 +260,13 @@ describe("Replay Engine (unit)", () => {
 
     // 1 event x 2 active destinations (disabled one skipped) = 2 jobs
     const waiting = await queue.getWaitingCount();
-    expect(waiting).toBe(2);
+    expect(waiting).toBeGreaterThanOrEqual(2);
 
-    // Disabled destination should not be in the jobs
+    // Disabled destination should not be in the jobs for this event
     const jobs = await queue.getWaiting();
-    const destIds = jobs.map((j) => j.data.destinationId);
+    const ourJobs = jobs.filter((j) => j.data.eventId === ev[0]!.id);
+    expect(ourJobs).toHaveLength(2);
+    const destIds = ourJobs.map((j) => j.data.destinationId);
     expect(destIds).not.toContain(disabledDestId);
     expect(destIds).toContain(destId1);
     expect(destIds).toContain(destId2);

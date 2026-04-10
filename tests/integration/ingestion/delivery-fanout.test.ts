@@ -27,10 +27,11 @@ describe("No-destinations edge case (integration)", () => {
     const redisUrl = process.env["REDIS_URL"] ?? "redis://localhost:6379";
     redis = new Redis(redisUrl);
 
-    // Create test tenant
+    // Create test tenant with unique API key
+    const uniqueKey = `no-dest-api-key-${Date.now()}-${crypto.randomUUID()}`;
     const apiKeyHash = crypto
       .createHash("sha256")
-      .update("no-dest-api-key")
+      .update(uniqueKey)
       .digest("hex");
 
     const tenantResult = await db.sql`
@@ -57,12 +58,9 @@ describe("No-destinations edge case (integration)", () => {
   });
 
   it("should persist event, return 200, and enqueue no jobs when source has no destinations", async () => {
-    // Drain queue before test
     const deliverQueue = new Queue("deliver", {
       connection: { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
     });
-    await deliverQueue.drain();
-    const waitingBefore = await deliverQueue.getWaitingCount();
 
     const payload = JSON.stringify({ event: "no-dest.test", ts: Date.now() });
 
@@ -84,9 +82,10 @@ describe("No-destinations edge case (integration)", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.status).toBe("pending");
 
-    // Verify no new jobs were enqueued
-    const waitingAfter = await deliverQueue.getWaitingCount();
-    expect(waitingAfter).toBe(waitingBefore);
+    // Verify no jobs were enqueued for THIS event
+    const jobs = await deliverQueue.getWaiting();
+    const ourJobs = jobs.filter((j) => j.data.eventId === body.eventId);
+    expect(ourJobs).toHaveLength(0);
 
     await deliverQueue.close();
   });
@@ -108,10 +107,11 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     const redisUrl = process.env["REDIS_URL"] ?? "redis://localhost:6379";
     redis = new Redis(redisUrl);
 
-    // Create test tenant
+    // Create test tenant with unique API key
+    const uniqueKey = `fanout-api-key-${Date.now()}-${crypto.randomUUID()}`;
     const apiKeyHash = crypto
       .createHash("sha256")
-      .update("fanout-api-key")
+      .update(uniqueKey)
       .digest("hex");
 
     const tenantResult = await db.sql`
@@ -153,7 +153,6 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     const deliverQueue = new Queue("deliver", {
       connection: { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
     });
-    await deliverQueue.drain();
 
     const payload = JSON.stringify({ event: "fanout.test", ts: Date.now() });
 
@@ -169,14 +168,11 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     expect(body.eventId).toBeTruthy();
     expect(body.status).toBe("accepted");
 
-    // Verify exactly 3 jobs enqueued (not 4 — disabled destination skipped)
-    const waitingCount = await deliverQueue.getWaitingCount();
-    expect(waitingCount).toBe(3);
-
-    // Verify job data shape
+    // Verify exactly 3 jobs for THIS event (not 4 — disabled destination skipped)
     const jobs = await deliverQueue.getWaiting();
-    for (const job of jobs) {
-      expect(job.data).toHaveProperty("eventId", body.eventId);
+    const ourJobs = jobs.filter((j) => j.data.eventId === body.eventId);
+    expect(ourJobs).toHaveLength(3);
+    for (const job of ourJobs) {
       expect(job.data).toHaveProperty("tenantId", tenantId);
       expect(job.data).toHaveProperty("destinationId");
     }
@@ -188,7 +184,6 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     const deliverQueue = new Queue("deliver", {
       connection: { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
     });
-    await deliverQueue.drain();
 
     const payload = JSON.stringify({ event: "fanout.dedup", ts: Date.now() });
 
@@ -203,11 +198,10 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     const body1 = JSON.parse(res1.body);
     expect(body1.status).toBe("accepted");
 
-    const countAfterFirst = await deliverQueue.getWaitingCount();
-    expect(countAfterFirst).toBe(3); // 3 active destinations
-
-    // Drain again to reset
-    await deliverQueue.drain();
+    // Verify 3 jobs for THIS event (filter by eventId, not total count)
+    const jobsAfterFirst = await deliverQueue.getWaiting();
+    const firstJobs = jobsAfterFirst.filter((j) => j.data.eventId === body1.eventId);
+    expect(firstJobs).toHaveLength(3);
 
     // Second submission — duplicate, should NOT enqueue
     const res2 = await app.inject({
@@ -220,9 +214,10 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     const body2 = JSON.parse(res2.body);
     expect(body2.status).toBe("duplicate");
 
-    // No new jobs should have been enqueued
-    const countAfterSecond = await deliverQueue.getWaitingCount();
-    expect(countAfterSecond).toBe(0);
+    // Still only 3 jobs for the original event — no new ones from duplicate
+    const jobsAfterSecond = await deliverQueue.getWaiting();
+    const secondJobs = jobsAfterSecond.filter((j) => j.data.eventId === body1.eventId);
+    expect(secondJobs).toHaveLength(3);
 
     await deliverQueue.close();
   });
