@@ -145,3 +145,14 @@ export class DuplicateSourceError extends AppError {
     this.name = "DuplicateSourceError";
   }
 }
+
+export class DestinationNotFoundError extends AppError {
+  constructor(destinationId: string) {
+    super(
+      "DESTINATION_NOT_FOUND",
+      `No destination found with id '${destinationId}'`,
+      404
+    );
+    this.name = "DestinationNotFoundError";
+  }
+}

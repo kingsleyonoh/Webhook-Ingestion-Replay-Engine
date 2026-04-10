@@ -12,6 +12,7 @@ import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
 import tenantRoutes from "./api/tenants.routes.js";
 import healthRoutes from "./api/health.routes.js";
 import sourceRoutes from "./api/sources.routes.js";
+import destinationRoutes from "./api/destinations.routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
 
 /**
@@ -103,6 +104,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register source management routes (authenticated)
   await app.register(sourceRoutes);
+
+  // Register destination management routes (authenticated)
+  await app.register(destinationRoutes);
 
   // Register webhook ingestion route (public, HMAC signature auth)
   await app.register(ingestionPlugin);
