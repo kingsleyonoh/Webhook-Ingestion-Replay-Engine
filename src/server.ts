@@ -16,6 +16,7 @@ import destinationRoutes from "./api/destinations.routes.js";
 import deadLetterRoutes from "./api/dead-letters.routes.js";
 import eventRoutes from "./api/events.routes.js";
 import replayRoutes from "./replay/routes.js";
+import statsRoutes from "./api/stats.routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
 import { setupGracefulShutdown } from "./shutdown.js";
 
@@ -120,6 +121,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register replay routes (authenticated)
   await app.register(replayRoutes);
+
+  // Register stats dashboard route (authenticated)
+  await app.register(statsRoutes);
 
   // Register webhook ingestion route (public, HMAC signature auth)
   await app.register(ingestionPlugin);
