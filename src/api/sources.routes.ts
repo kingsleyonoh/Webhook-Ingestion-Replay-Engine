@@ -11,6 +11,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
+import { Redis } from "ioredis";
 import { createSqlClient, createDb } from "../db/client.js";
 import type { Database, SqlClient } from "../db/client.js";
 import { sources } from "../db/schema.js";
@@ -23,6 +24,7 @@ import {
 } from "../lib/errors.js";
 import { uuidParamSchema } from "./schemas/common.js";
 import { handleListSources } from "./sources-list.handler.js";
+import { invalidateCachedSource } from "../ingestion/source-cache.js";
 
 /** URL-safe slug pattern: lowercase letters, digits, hyphens */
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
@@ -75,11 +77,19 @@ async function sourceRoutes(app: FastifyInstance): Promise<void> {
       "DATABASE_URL not set — source routes require DB"
     );
   }
+  const redisUrl = process.env["REDIS_URL"];
+  if (!redisUrl) {
+    throw new Error(
+      "REDIS_URL not set — source routes require Redis for cache"
+    );
+  }
 
   const sqlClient: SqlClient = createSqlClient(databaseUrl, { max: 3 });
   const db: Database = createDb(sqlClient);
+  const redis = new Redis(redisUrl);
 
   app.addHook("onClose", async () => {
+    await redis.quit();
     await sqlClient.end();
   });
 
@@ -106,7 +116,7 @@ async function sourceRoutes(app: FastifyInstance): Promise<void> {
       "/api/sources/:id",
       { config: { rateLimit: RATE_LIMITS.sourcesUpdate } },
       async (request, reply) => {
-        return handleUpdateSource(db, request, reply);
+        return handleUpdateSource(db, redis, request, reply);
       }
     );
   });
@@ -195,6 +205,7 @@ async function handleCreateSource(
 
 async function handleUpdateSource(
   db: Database,
+  redis: Redis,
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<unknown> {
@@ -218,6 +229,14 @@ async function handleUpdateSource(
   }
 
   const updateData = bodyParse.data;
+
+  // Fetch current slug before update so we can invalidate the old cache entry
+  const currentSource = await db
+    .select({ slug: sources.slug })
+    .from(sources)
+    .where(and(eq(sources.id, id), eq(sources.tenantId, tenantId)))
+    .limit(1);
+  const oldSlug = currentSource[0]?.slug;
 
   const setClause: Record<string, unknown> = {
     updatedAt: new Date(),
@@ -252,6 +271,14 @@ async function handleUpdateSource(
   const updated = result[0];
   if (!updated) {
     throw new SourceNotFoundError(id);
+  }
+
+  // Invalidate cache for old slug (always) and new slug (if changed)
+  if (oldSlug) {
+    await invalidateCachedSource(redis, oldSlug);
+  }
+  if (updateData.slug && updateData.slug !== oldSlug) {
+    await invalidateCachedSource(redis, updateData.slug);
   }
 
   return reply.status(200).send({

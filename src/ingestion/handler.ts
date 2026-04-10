@@ -23,11 +23,14 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { eq, and } from "drizzle-orm";
+import { Redis } from "ioredis";
 import { createSqlClient, createDb } from "../db/client.js";
 import type { Database, SqlClient } from "../db/client.js";
 import { sources, events, destinations } from "../db/schema.js";
 import { verifySignature } from "./signature.js";
 import { generateIdempotencyKey } from "./idempotency.js";
+import { getCachedSource, setCachedSource } from "./source-cache.js";
+import type { CachedSourceConfig } from "./source-cache.js";
 import { createDeliveryQueue } from "../delivery/queue.js";
 import type { DeliverJobData } from "../delivery/queue.js";
 import {
@@ -54,14 +57,18 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
   const sqlClient: SqlClient = createSqlClient(databaseUrl, { max: 5 });
   const db: Database = createDb(sqlClient);
 
+  // Create Redis client for source config cache
+  const redis = new Redis(config.redisUrl);
+
   // Create delivery queue for fan-out
   const deliverQueue: Queue<DeliverJobData> = createDeliveryQueue(
     config.redisUrl
   );
 
-  // Clean up DB connection + queue on server close
+  // Clean up DB connection + queue + Redis on server close
   app.addHook("onClose", async () => {
     await deliverQueue.close();
+    await redis.quit();
     await sqlClient.end();
   });
 
@@ -110,24 +117,48 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         );
       }
 
-      // Step 1: Look up source by slug (must be enabled)
-      const sourceResult = await db
-        .select({
-          id: sources.id,
-          tenantId: sources.tenantId,
-          signatureHeader: sources.signatureHeader,
-          signatureAlgo: sources.signatureAlgo,
-          signingSecret: sources.signingSecret,
-          enabled: sources.enabled,
-        })
-        .from(sources)
-        .where(
-          and(eq(sources.slug, sourceSlug), eq(sources.enabled, true))
-        )
-        .limit(1);
+      // Step 1: Look up source by slug — cache first, then DB
+      let source: CachedSourceConfig | null =
+        await getCachedSource(redis, sourceSlug);
 
-      const source = sourceResult[0];
       if (!source) {
+        // Cache miss — query DB
+        const sourceResult = await db
+          .select({
+            id: sources.id,
+            tenantId: sources.tenantId,
+            slug: sources.slug,
+            signatureHeader: sources.signatureHeader,
+            signatureAlgo: sources.signatureAlgo,
+            signingSecret: sources.signingSecret,
+            enabled: sources.enabled,
+          })
+          .from(sources)
+          .where(
+            and(eq(sources.slug, sourceSlug), eq(sources.enabled, true))
+          )
+          .limit(1);
+
+        const dbSource = sourceResult[0];
+        if (!dbSource) {
+          throw new SourceNotFoundError(sourceSlug);
+        }
+
+        // Populate cache for future requests
+        source = {
+          id: dbSource.id,
+          tenantId: dbSource.tenantId,
+          slug: dbSource.slug,
+          signatureHeader: dbSource.signatureHeader,
+          signatureAlgo: dbSource.signatureAlgo,
+          signingSecret: dbSource.signingSecret,
+          enabled: dbSource.enabled,
+        };
+        await setCachedSource(redis, sourceSlug, source);
+      }
+
+      // Cached entries are only for enabled sources, but double-check
+      if (!source.enabled) {
         throw new SourceNotFoundError(sourceSlug);
       }
 
