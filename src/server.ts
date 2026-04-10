@@ -9,6 +9,8 @@ import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import { errorHandlerPlugin } from "./api/middleware/error-handler.js";
 import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
+import tenantRoutes from "./api/tenants.routes.js";
+import healthRoutes from "./api/health.routes.js";
 
 /**
  * Declare the tenantId request decorator type.
@@ -86,13 +88,11 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Register rate limiting
   await app.register(rateLimitPlugin);
 
-  // Health check — public, no auth required
-  app.get("/api/health", async () => {
-    return {
-      status: "ok",
-      uptime: process.uptime(),
-    };
-  });
+  // Register health check routes (public, no auth)
+  await app.register(healthRoutes);
+
+  // Register tenant routes (register = public, me = authenticated)
+  await app.register(tenantRoutes);
 
   return app;
 }

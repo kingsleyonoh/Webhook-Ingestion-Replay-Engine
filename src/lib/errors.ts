@@ -114,3 +114,23 @@ export class QueueOverloadError extends AppError {
     this.name = "QueueOverloadError";
   }
 }
+
+export class RegistrationDisabledError extends AppError {
+  constructor(
+    message = "Tenant self-registration is currently disabled"
+  ) {
+    super("REGISTRATION_DISABLED", message, 403);
+    this.name = "RegistrationDisabledError";
+  }
+}
+
+export class DuplicateTenantError extends AppError {
+  constructor(name: string) {
+    super(
+      "DUPLICATE_TENANT",
+      `A tenant with the name '${name}' already exists`,
+      409
+    );
+    this.name = "DuplicateTenantError";
+  }
+}
