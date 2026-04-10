@@ -11,6 +11,7 @@ import { errorHandlerPlugin } from "./api/middleware/error-handler.js";
 import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
 import tenantRoutes from "./api/tenants.routes.js";
 import healthRoutes from "./api/health.routes.js";
+import { ingestionPlugin } from "./ingestion/handler.js";
 
 /**
  * Declare the tenantId request decorator type.
@@ -93,6 +94,9 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register tenant routes (register = public, me = authenticated)
   await app.register(tenantRoutes);
+
+  // Register webhook ingestion route (public, HMAC signature auth)
+  await app.register(ingestionPlugin);
 
   return app;
 }
