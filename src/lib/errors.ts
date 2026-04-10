@@ -156,3 +156,25 @@ export class DestinationNotFoundError extends AppError {
     this.name = "DestinationNotFoundError";
   }
 }
+
+export class DeliveryNotFoundError extends AppError {
+  constructor(deliveryId: string) {
+    super(
+      "DELIVERY_NOT_FOUND",
+      `No delivery found with id '${deliveryId}'`,
+      404
+    );
+    this.name = "DeliveryNotFoundError";
+  }
+}
+
+export class EventNotFoundError extends AppError {
+  constructor(eventId: string) {
+    super(
+      "EVENT_NOT_FOUND",
+      `No event found with id '${eventId}'`,
+      404
+    );
+    this.name = "EventNotFoundError";
+  }
+}

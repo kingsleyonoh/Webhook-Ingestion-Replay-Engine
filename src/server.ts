@@ -13,6 +13,9 @@ import tenantRoutes from "./api/tenants.routes.js";
 import healthRoutes from "./api/health.routes.js";
 import sourceRoutes from "./api/sources.routes.js";
 import destinationRoutes from "./api/destinations.routes.js";
+import deadLetterRoutes from "./api/dead-letters.routes.js";
+import eventRoutes from "./api/events.routes.js";
+import replayRoutes from "./replay/routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
 import { setupGracefulShutdown } from "./shutdown.js";
 
@@ -108,6 +111,15 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Register destination management routes (authenticated)
   await app.register(destinationRoutes);
+
+  // Register dead letter inspector routes (authenticated)
+  await app.register(deadLetterRoutes);
+
+  // Register event inspector routes (authenticated)
+  await app.register(eventRoutes);
+
+  // Register replay routes (authenticated)
+  await app.register(replayRoutes);
 
   // Register webhook ingestion route (public, HMAC signature auth)
   await app.register(ingestionPlugin);
