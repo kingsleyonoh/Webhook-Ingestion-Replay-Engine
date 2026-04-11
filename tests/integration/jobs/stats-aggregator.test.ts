@@ -85,12 +85,8 @@ describe("Stats aggregator job (integration)", () => {
   });
 
   afterAll(async () => {
-    // Clean up Redis keys
-    const pattern = `stats:source:*`;
-    const keys = await redisHelper.redis.keys(pattern);
-    if (keys.length > 0) {
-      await redisHelper.redis.del(...keys);
-    }
+    // Clean up only THIS test's Redis keys to avoid wiping other concurrent tests' keys
+    await redisHelper.redis.del(`stats:source:${sourceId1}`, `stats:source:${sourceId2}`);
 
     // DB cleanup
     await db.sql`DELETE FROM deliveries WHERE tenant_id = ${tenantId}`;

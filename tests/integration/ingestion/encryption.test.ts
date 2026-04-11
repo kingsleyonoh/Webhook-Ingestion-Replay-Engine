@@ -61,11 +61,8 @@ describe("Signing secret encryption (integration)", () => {
   });
 
   afterEach(async () => {
-    // Clear source config cache between tests
-    const keys = await redisHelper.redis.keys("source:config:*");
-    if (keys.length > 0) {
-      await redisHelper.redis.del(...keys);
-    }
+    // Clear only THIS test's source config cache key to avoid wiping other concurrent tests' keys
+    await redisHelper.redis.del(`source:config:${sourceSlug}`);
   });
 
   afterAll(async () => {

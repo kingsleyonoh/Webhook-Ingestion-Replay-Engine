@@ -32,9 +32,6 @@ describe("Replay Engine (unit)", () => {
     db = createDb(sqlClient);
     queue = createDeliveryQueue(redisUrl);
 
-    // Drain queue
-    await queue.drain();
-
     // Create tenant
     const apiKey = `replay-eng-${Date.now()}-${crypto.randomUUID()}`;
     const hash = crypto.createHash("sha256").update(apiKey).digest("hex");
@@ -101,7 +98,7 @@ describe("Replay Engine (unit)", () => {
       RETURNING id
     `;
 
-    await queue.drain();
+    const waitingBefore = await queue.getWaitingCount();
 
     const result = await executeReplay({
       db,
@@ -119,9 +116,9 @@ describe("Replay Engine (unit)", () => {
     expect(result.failed).toBe(0);
     expect(result.replayRequestId).toBeDefined();
 
-    // Verify jobs in queue
-    const waiting = await queue.getWaitingCount();
-    expect(waiting).toBeGreaterThanOrEqual(4);
+    // Verify jobs added to queue (delta-based to ignore other concurrent tests)
+    const waitingAfter = await queue.getWaitingCount();
+    expect(waitingAfter - waitingBefore).toBeGreaterThanOrEqual(4);
 
     // Verify events marked as replayed
     const eventsAfter = await testDb.sql`
@@ -139,8 +136,6 @@ describe("Replay Engine (unit)", () => {
     expect(rr[0]!.processed).toBe(2);
     expect(rr[0]!.failed).toBe(0);
     expect(rr[0]!.completed_at).not.toBeNull();
-
-    await queue.drain();
   });
 
   it("should update progress counters accurately", async () => {
@@ -149,8 +144,6 @@ describe("Replay Engine (unit)", () => {
       VALUES (${tenantId}, ${sourceId}, ${`replay-counter-${Date.now()}-${crypto.randomUUID()}`}, '{}', '{"c":1}', 'pending')
       RETURNING id
     `;
-
-    await queue.drain();
 
     const result = await executeReplay({
       db,
@@ -175,8 +168,6 @@ describe("Replay Engine (unit)", () => {
     expect(rr[0]!.processed).toBe(1);
     expect(rr[0]!.failed).toBe(0);
     expect(rr[0]!.completed_at).not.toBeNull();
-
-    await queue.drain();
   });
 
   it("should set completed_at when all events processed", async () => {
@@ -185,8 +176,6 @@ describe("Replay Engine (unit)", () => {
       VALUES (${tenantId}, ${sourceId}, ${`replay-done-${Date.now()}-${crypto.randomUUID()}`}, '{}', '{"d":1}', 'pending')
       RETURNING id
     `;
-
-    await queue.drain();
 
     const result = await executeReplay({
       db,
@@ -200,8 +189,6 @@ describe("Replay Engine (unit)", () => {
     `;
     expect(rr[0]!.completed_at).not.toBeNull();
     expect(rr[0]!.status).toBe("completed");
-
-    await queue.drain();
   });
 
   it("should batch enqueue in groups of batchSize to avoid Redis spikes", async () => {
@@ -216,7 +203,7 @@ describe("Replay Engine (unit)", () => {
       eventIds.push(ev[0]!.id as string);
     }
 
-    await queue.drain();
+    const waitingBefore = await queue.getWaitingCount();
 
     const result = await executeReplay({
       db,
@@ -229,17 +216,15 @@ describe("Replay Engine (unit)", () => {
     expect(result.processed).toBe(5);
     expect(result.failed).toBe(0);
 
-    // 5 events x 2 active destinations = 10 jobs total
-    const waiting = await queue.getWaitingCount();
-    expect(waiting).toBeGreaterThanOrEqual(10);
+    // 5 events x 2 active destinations = 10 jobs total (delta-based)
+    const waitingAfter = await queue.getWaitingCount();
+    expect(waitingAfter - waitingBefore).toBeGreaterThanOrEqual(10);
 
     // Verify all events marked replayed
     const eventsAfter = await testDb.sql`
       SELECT status FROM events WHERE id IN (${eventIds[0]!}, ${eventIds[1]!}, ${eventIds[2]!}, ${eventIds[3]!}, ${eventIds[4]!})
     `;
     expect(eventsAfter.every((e: { status: string }) => e.status === "replayed")).toBe(true);
-
-    await queue.drain();
   });
 
   it("should skip disabled destinations", async () => {
@@ -249,7 +234,7 @@ describe("Replay Engine (unit)", () => {
       RETURNING id
     `;
 
-    await queue.drain();
+    const waitingBefore = await queue.getWaitingCount();
 
     const result = await executeReplay({
       db,
@@ -258,9 +243,9 @@ describe("Replay Engine (unit)", () => {
       batchSize: 100,
     });
 
-    // 1 event x 2 active destinations (disabled one skipped) = 2 jobs
-    const waiting = await queue.getWaitingCount();
-    expect(waiting).toBeGreaterThanOrEqual(2);
+    // 1 event x 2 active destinations (disabled one skipped) = 2 jobs (delta-based)
+    const waitingAfter = await queue.getWaitingCount();
+    expect(waitingAfter - waitingBefore).toBeGreaterThanOrEqual(2);
 
     // Disabled destination should not be in the jobs for this event
     const jobs = await queue.getWaiting();
@@ -270,8 +255,6 @@ describe("Replay Engine (unit)", () => {
     expect(destIds).not.toContain(disabledDestId);
     expect(destIds).toContain(destId1);
     expect(destIds).toContain(destId2);
-
-    await queue.drain();
   });
 
   it("should filter events by source_id", async () => {
@@ -301,8 +284,6 @@ describe("Replay Engine (unit)", () => {
       VALUES (${tenantId}, ${otherSourceId}, ${`filter-src-ev2-${Date.now()}-${crypto.randomUUID()}`}, '{}', '{"f":2}', 'pending')
     `;
 
-    await queue.drain();
-
     // Replay only sourceId events
     const result = await executeReplay({
       db,
@@ -319,8 +300,6 @@ describe("Replay Engine (unit)", () => {
       SELECT source_id FROM replay_requests WHERE id = ${result.replayRequestId}
     `;
     expect(rr[0]!.source_id).toBe(sourceId);
-
-    await queue.drain();
   });
 
   it("should filter events by time range", async () => {
@@ -329,8 +308,6 @@ describe("Replay Engine (unit)", () => {
       VALUES (${tenantId}, ${sourceId}, ${`time-range-${Date.now()}-${crypto.randomUUID()}`}, '{}', '{"t":1}', 'pending', '2025-06-15T12:00:00Z')
       RETURNING id
     `;
-
-    await queue.drain();
 
     const result = await executeReplay({
       db,
@@ -344,13 +321,9 @@ describe("Replay Engine (unit)", () => {
     });
 
     expect(result.totalEvents).toBeGreaterThanOrEqual(1);
-
-    await queue.drain();
   });
 
   it("should handle empty event set gracefully", async () => {
-    await queue.drain();
-
     const result = await executeReplay({
       db,
       queue,
@@ -371,7 +344,5 @@ describe("Replay Engine (unit)", () => {
     `;
     expect(rr[0]!.status).toBe("completed");
     expect(rr[0]!.completed_at).not.toBeNull();
-
-    await queue.drain();
   });
 });

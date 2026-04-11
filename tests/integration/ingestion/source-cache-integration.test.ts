@@ -57,20 +57,14 @@ describe("Source config cache integration (ingestion + source update)", () => {
     sourceId = sourceResult[0]!.id as string;
   });
 
-  // Clear cache before each test to isolate cache behavior
+  // Clear only THIS test's cache key before each test to avoid wiping other concurrent tests' keys
   beforeEach(async () => {
-    const keys = await redis.keys(`${CACHE_PREFIX}*`);
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
+    await redis.del(`${CACHE_PREFIX}${sourceSlug}`);
   });
 
   afterAll(async () => {
-    // Clean up cache
-    const keys = await redis.keys(`${CACHE_PREFIX}*`);
-    if (keys.length > 0) {
-      await redis.del(...keys);
-    }
+    // Clean up only this test's cache key
+    await redis.del(`${CACHE_PREFIX}${sourceSlug}`);
     // Clean up DB
     await db.sql`DELETE FROM events WHERE tenant_id = ${tenantId}`;
     await db.sql`DELETE FROM destinations WHERE tenant_id = ${tenantId}`;
