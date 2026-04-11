@@ -27,7 +27,7 @@ import { Redis } from "ioredis";
 import { createSqlClient, createDb } from "../db/client.js";
 import type { Database, SqlClient } from "../db/client.js";
 import { sources, events, destinations } from "../db/schema.js";
-import { verifySignature } from "./signature.js";
+import { verifySignature, extractTimestampFromHeader } from "./signature.js";
 import { generateIdempotencyKey } from "./idempotency.js";
 import { getCachedSource, setCachedSource } from "./source-cache.js";
 import type { CachedSourceConfig } from "./source-cache.js";
@@ -198,11 +198,16 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
             source.signatureHeader.toLowerCase()
           ] as string) ?? "";
 
+        // Extract timestamp from signature header (Stripe t=NNN format)
+        const timestampMs = extractTimestampFromHeader(sigHeaderValue);
+
         const isValid = verifySignature({
           rawBody,
           signatureHeader: sigHeaderValue,
           signingSecret: plainSecret,
           algorithm: algo,
+          timestampMs,
+          toleranceMs: config.signatureToleranceMs,
         });
 
         if (!isValid) {

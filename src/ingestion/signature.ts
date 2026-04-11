@@ -12,6 +12,10 @@ export interface VerifySignatureParams {
   signatureHeader: string;
   signingSecret: string;
   algorithm: "hmac-sha256" | "hmac-sha1" | "none";
+  /** Extracted timestamp from header (milliseconds since epoch). */
+  timestampMs?: number;
+  /** Max signature age in ms (default 300000 = 5 min). Set to 0 to disable. */
+  toleranceMs?: number;
 }
 
 /**
@@ -34,11 +38,30 @@ function stripPrefix(signature: string): string {
  * @returns true if signature is valid (or algorithm is `none`), false otherwise
  */
 export function verifySignature(params: VerifySignatureParams): boolean {
-  const { rawBody, signatureHeader, signingSecret, algorithm } = params;
+  const {
+    rawBody,
+    signatureHeader,
+    signingSecret,
+    algorithm,
+    timestampMs,
+    toleranceMs,
+  } = params;
 
   // No verification required
   if (algorithm === "none") {
     return true;
+  }
+
+  // Timestamp tolerance check: reject stale signatures
+  if (
+    timestampMs !== undefined &&
+    toleranceMs !== undefined &&
+    toleranceMs > 0
+  ) {
+    const age = Date.now() - timestampMs;
+    if (age > toleranceMs) {
+      return false;
+    }
   }
 
   // Map algorithm name to Node.js crypto algorithm
@@ -60,4 +83,31 @@ export function verifySignature(params: VerifySignatureParams): boolean {
   }
 
   return crypto.timingSafeEqual(expectedBuf, providedBuf);
+}
+
+/**
+ * Extract a timestamp from a signature header value.
+ * Supports Stripe-style format: `t=1234567890,v1=abc...`
+ *
+ * @returns Timestamp in milliseconds, or undefined if not parseable.
+ */
+export function extractTimestampFromHeader(
+  headerValue: string
+): number | undefined {
+  if (!headerValue) {
+    return undefined;
+  }
+
+  // Stripe format: t=<unix_seconds>,v1=<sig>
+  const match = headerValue.match(/^t=(\d+),/);
+  if (!match) {
+    return undefined;
+  }
+
+  const seconds = Number(match[1]);
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return undefined;
+  }
+
+  return seconds * 1000; // Convert to milliseconds
 }

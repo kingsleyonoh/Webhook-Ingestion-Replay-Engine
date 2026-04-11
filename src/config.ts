@@ -50,6 +50,9 @@ const configSchema = z.object({
   // Payload limits
   MAX_PAYLOAD_BYTES: z.coerce.number().int().positive().default(1048576),
 
+  // Signature timestamp tolerance (ms). Default 300000 (5 min). Set 0 to disable.
+  SIGNATURE_TOLERANCE_MS: z.coerce.number().int().min(0).default(300000),
+
   // Encryption (required if any source uses signing secrets)
   SIGNING_SECRET_KEY: optionalString,
 
@@ -74,6 +77,7 @@ export type AppConfig = {
   replayBatchSize: number;
   eventArchiveDays: number;
   maxPayloadBytes: number;
+  signatureToleranceMs: number;
   signingSecretKey: string | undefined;
   notificationHubUrl: string | undefined;
   notificationHubApiKey: string | undefined;
@@ -102,6 +106,7 @@ export function loadConfig(): AppConfig {
     replayBatchSize: parsed.REPLAY_BATCH_SIZE,
     eventArchiveDays: parsed.EVENT_ARCHIVE_DAYS,
     maxPayloadBytes: parsed.MAX_PAYLOAD_BYTES,
+    signatureToleranceMs: parsed.SIGNATURE_TOLERANCE_MS,
     signingSecretKey: parsed.SIGNING_SECRET_KEY,
     notificationHubUrl: parsed.NOTIFICATION_HUB_URL,
     notificationHubApiKey: parsed.NOTIFICATION_HUB_API_KEY,
