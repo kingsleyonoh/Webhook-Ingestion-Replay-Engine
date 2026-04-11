@@ -1,5 +1,8 @@
 # Production deployment — VPS behind Traefik
 # Deploy: scp this file to VPS, then docker compose up -d
+#
+# REQUIRED: Create .env on VPS with POSTGRES_PASSWORD and REDIS_PASSWORD
+# before running. See .env.example for all variables.
 
 services:
   webhook-engine:
@@ -32,10 +35,10 @@ services:
     image: postgres:16-alpine
     container_name: webhook-engine-db
     restart: unless-stopped
+    env_file: .env
     environment:
       POSTGRES_DB: webhooks
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: REDACTED
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d webhooks"]
       interval: 10s
@@ -51,9 +54,10 @@ services:
     image: redis:7-alpine
     container_name: webhook-engine-redis
     restart: unless-stopped
-    command: redis-server --requirepass REDACTED --maxmemory 256mb --maxmemory-policy noeviction
+    env_file: .env
+    command: ["sh", "-c", "redis-server --requirepass $${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy noeviction"]
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "REDACTED", "ping"]
+      test: ["CMD", "sh", "-c", "redis-cli -a $$REDIS_PASSWORD ping"]
       interval: 10s
       timeout: 5s
       retries: 5
