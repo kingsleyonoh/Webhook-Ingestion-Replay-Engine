@@ -41,6 +41,8 @@ import {
 } from "../lib/errors.js";
 import { loadConfig } from "../config.js";
 import { logger } from "../lib/logger.js";
+import { decrypt, getEncryptionKey } from "../lib/crypto.js";
+import { sanitizeHeaders } from "./header-sanitizer.js";
 import type { Queue } from "bullmq";
 
 /** Maximum queue depth before rejecting incoming webhooks (Section 10b) */
@@ -127,7 +129,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         await getCachedSource(redis, sourceSlug);
 
       if (!source) {
-        // Cache miss — query DB
+        // Cache miss — query DB (fetch ALL matching slugs, including disabled)
         const sourceResult = await db
           .select({
             id: sources.id,
@@ -139,9 +141,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
             enabled: sources.enabled,
           })
           .from(sources)
-          .where(
-            and(eq(sources.slug, sourceSlug), eq(sources.enabled, true))
-          )
+          .where(eq(sources.slug, sourceSlug))
           .limit(1);
 
         const dbSource = sourceResult[0];
@@ -149,7 +149,12 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
           throw new SourceNotFoundError(sourceSlug);
         }
 
-        // Populate cache for future requests
+        // Uniform 404 for disabled sources — same as unknown slug
+        if (!dbSource.enabled) {
+          throw new SourceNotFoundError(sourceSlug);
+        }
+
+        // Populate cache for future requests (stores encrypted secret)
         source = {
           id: dbSource.id,
           tenantId: dbSource.tenantId,
@@ -162,7 +167,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         await setCachedSource(redis, sourceSlug, source);
       }
 
-      // Cached entries are only for enabled sources, but double-check
+      // Cached entries should only be enabled, but guard against stale cache
       if (!source.enabled) {
         throw new SourceNotFoundError(sourceSlug);
       }
@@ -178,6 +183,16 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         source.signatureHeader &&
         source.signingSecret
       ) {
+        // Decrypt the signing secret (stored encrypted at rest)
+        let plainSecret: string;
+        try {
+          const encKey = getEncryptionKey();
+          plainSecret = decrypt(source.signingSecret, encKey);
+        } catch {
+          // If decryption fails, treat as plaintext (migration compatibility)
+          plainSecret = source.signingSecret;
+        }
+
         const sigHeaderValue =
           (request.headers[
             source.signatureHeader.toLowerCase()
@@ -186,7 +201,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         const isValid = verifySignature({
           rawBody,
           signatureHeader: sigHeaderValue,
-          signingSecret: source.signingSecret,
+          signingSecret: plainSecret,
           algorithm: algo,
         });
 
@@ -198,11 +213,14 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
             rawBody,
           });
 
+          const sanitizedRejectedHeaders = sanitizeHeaders(
+            request.headers as Record<string, unknown>
+          );
           await db.insert(events).values({
             tenantId: source.tenantId,
             sourceId: source.id,
             idempotencyKey,
-            headers: request.headers as Record<string, unknown>,
+            headers: sanitizedRejectedHeaders,
             payload: request.body as Record<string, unknown>,
             status: "rejected",
           });
@@ -217,6 +235,11 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         rawBody,
       });
 
+      // Step 5b: Sanitize headers before persistence
+      const sanitizedHeaders = sanitizeHeaders(
+        request.headers as Record<string, unknown>
+      );
+
       // Step 6: Persist event with idempotency check
       const insertResult = await db
         .insert(events)
@@ -224,7 +247,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
           tenantId: source.tenantId,
           sourceId: source.id,
           idempotencyKey,
-          headers: request.headers as Record<string, unknown>,
+          headers: sanitizedHeaders,
           payload: request.body as Record<string, unknown>,
           status: "pending",
         })

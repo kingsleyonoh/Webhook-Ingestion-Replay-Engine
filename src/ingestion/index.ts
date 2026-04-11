@@ -15,3 +15,4 @@ export {
   CACHE_PREFIX,
 } from "./source-cache.js";
 export type { CachedSourceConfig } from "./source-cache.js";
+export { sanitizeHeaders } from "./header-sanitizer.js";

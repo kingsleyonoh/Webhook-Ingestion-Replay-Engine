@@ -89,7 +89,9 @@ describe("POST /api/sources (integration)", () => {
     `;
     expect(dbResult).toHaveLength(1);
     expect(dbResult[0]!.tenant_id).toBe(tenantId);
-    expect(dbResult[0]!.signing_secret).toBe("whsec_test123");
+    // Signing secret should be encrypted at rest (not stored as plaintext)
+    expect(dbResult[0]!.signing_secret).not.toBe("whsec_test123");
+    expect(dbResult[0]!.signing_secret).toBeTruthy();
   });
 
   it("should create a source with minimal config (name + slug only)", async () => {

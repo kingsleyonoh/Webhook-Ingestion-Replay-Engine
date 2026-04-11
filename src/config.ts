@@ -50,6 +50,9 @@ const configSchema = z.object({
   // Payload limits
   MAX_PAYLOAD_BYTES: z.coerce.number().int().positive().default(1048576),
 
+  // Encryption (required if any source uses signing secrets)
+  SIGNING_SECRET_KEY: optionalString,
+
   // Ecosystem (optional)
   NOTIFICATION_HUB_URL: optionalString,
   NOTIFICATION_HUB_API_KEY: optionalString,
@@ -71,6 +74,7 @@ export type AppConfig = {
   replayBatchSize: number;
   eventArchiveDays: number;
   maxPayloadBytes: number;
+  signingSecretKey: string | undefined;
   notificationHubUrl: string | undefined;
   notificationHubApiKey: string | undefined;
   workflowEngineUrl: string | undefined;
@@ -98,6 +102,7 @@ export function loadConfig(): AppConfig {
     replayBatchSize: parsed.REPLAY_BATCH_SIZE,
     eventArchiveDays: parsed.EVENT_ARCHIVE_DAYS,
     maxPayloadBytes: parsed.MAX_PAYLOAD_BYTES,
+    signingSecretKey: parsed.SIGNING_SECRET_KEY,
     notificationHubUrl: parsed.NOTIFICATION_HUB_URL,
     notificationHubApiKey: parsed.NOTIFICATION_HUB_API_KEY,
     workflowEngineUrl: parsed.WORKFLOW_ENGINE_URL,

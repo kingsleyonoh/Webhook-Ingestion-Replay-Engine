@@ -8,6 +8,8 @@
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
 import helmet from "@fastify/helmet";
+import cors from "@fastify/cors";
+import { safeParse } from "./lib/json-safe-parse.js";
 import { errorHandlerPlugin } from "./api/middleware/error-handler.js";
 import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
 import tenantRoutes from "./api/tenants.routes.js";
@@ -33,9 +35,13 @@ declare module "fastify" {
   }
 }
 
+/** Default max JSON nesting depth to prevent DoS */
+const MAX_JSON_DEPTH = 20;
+
 /**
  * Raw body content type parser for webhook signature verification.
  * Buffers the raw body while still parsing JSON for handler access.
+ * Enforces a nesting depth limit to prevent DoS via deeply nested payloads.
  */
 function registerRawBodyParser(app: FastifyInstance): void {
   app.removeAllContentTypeParsers();
@@ -51,11 +57,20 @@ function registerRawBodyParser(app: FastifyInstance): void {
       // Preserve raw bytes for HMAC signature verification
       request.rawBody = body;
       try {
+        const str = body.toString();
         const parsed: unknown =
-          body.length > 0 ? JSON.parse(body.toString()) : {};
+          body.length > 0 ? safeParse(str, MAX_JSON_DEPTH) : {};
         done(null, parsed);
       } catch (err) {
-        done(err as Error);
+        const error = err as Error;
+        if (error.message?.includes("nesting depth")) {
+          // Return 400 for depth limit violations
+          const depthError = new Error(error.message);
+          (depthError as { statusCode?: number }).statusCode = 400;
+          done(depthError);
+        } else {
+          done(error);
+        }
       }
     }
   );
@@ -115,6 +130,9 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Disable CSP for API-only server (no HTML content)
     contentSecurityPolicy: false,
   });
+
+  // Register CORS — deny browser CORS (API-only, no browser clients)
+  await app.register(cors, { origin: false });
 
   // Register error handler (catches all downstream errors)
   await app.register(errorHandlerPlugin);

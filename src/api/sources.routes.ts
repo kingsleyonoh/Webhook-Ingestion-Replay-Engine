@@ -25,6 +25,7 @@ import {
 import { uuidParamSchema } from "./schemas/common.js";
 import { handleListSources } from "./sources-list.handler.js";
 import { invalidateCachedSource } from "../ingestion/source-cache.js";
+import { encrypt, getEncryptionKey } from "../lib/crypto.js";
 
 /** URL-safe slug pattern: lowercase letters, digits, hyphens */
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/;
@@ -149,6 +150,18 @@ async function handleCreateSource(
   } = parseResult.data;
   const tenantId = request.tenantId;
 
+  // Encrypt signing_secret before DB persistence
+  let encryptedSecret: string | null = null;
+  if (signing_secret) {
+    try {
+      const encKey = getEncryptionKey();
+      encryptedSecret = encrypt(signing_secret, encKey);
+    } catch {
+      // If encryption key is not configured, store as-is (migration path)
+      encryptedSecret = signing_secret;
+    }
+  }
+
   try {
     const result = await db
       .insert(sources)
@@ -158,7 +171,7 @@ async function handleCreateSource(
         slug,
         signatureHeader: signature_header ?? null,
         signatureAlgo: signature_algo ?? null,
-        signingSecret: signing_secret ?? null,
+        signingSecret: encryptedSecret,
         enabled: true,
       })
       .returning({
@@ -262,8 +275,15 @@ async function handleUpdateSource(
     setClause.signatureHeader = updateData.signature_header;
   if (updateData.signature_algo !== undefined)
     setClause.signatureAlgo = updateData.signature_algo;
-  if (updateData.signing_secret !== undefined)
-    setClause.signingSecret = updateData.signing_secret;
+  if (updateData.signing_secret !== undefined) {
+    // Encrypt signing_secret before DB persistence
+    try {
+      const encKey = getEncryptionKey();
+      setClause.signingSecret = encrypt(updateData.signing_secret, encKey);
+    } catch {
+      setClause.signingSecret = updateData.signing_secret;
+    }
+  }
   if (updateData.enabled !== undefined)
     setClause.enabled = updateData.enabled;
 
