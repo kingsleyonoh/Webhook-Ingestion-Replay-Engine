@@ -1,7 +1,7 @@
 # Webhook Ingestion Engine — Codebase Context
 
-> Last updated: 2026-04-10
-> Template synced: 2026-04-10
+> Last updated: 2026-04-11
+> Template synced: 2026-04-11
 
 ## Tech Stack
 
@@ -133,19 +133,16 @@ tests/
 - Delivery: Persist-before-process, at-least-once delivery via BullMQ
 - Source config: Source-agnostic — adding a source is a DB insert, not a code change
 
-### Request-Scoped Caching (Shared Cached Helpers)
+### Request-Scoped Caching
 
-Expensive lookups (auth/tenant resolution, source config) are resolved **once per request**, not per handler:
-
-- **Tenant context:** Auth middleware resolves `X-API-Key` → `tenantId` and attaches to `request.tenantId` via Fastify decorator. All downstream handlers read from the decorator — never re-query.
-- **Source config:** Cached in Redis (TTL 60s). Ingestion handler reads from cache; cache miss fetches from DB and populates. Source update API invalidates the cache entry.
-- **Pattern:** Middleware sets context → handlers consume it. No handler should perform its own tenant or source lookup.
+- **Tenant context:** Auth middleware resolves `X-API-Key` → `tenantId` via Fastify decorator. Downstream handlers read from decorator — never re-query.
+- **Source config:** Cached in Redis (TTL 60s). Cache miss fetches from DB. Source update API invalidates cache.
+- **Pattern:** Middleware sets context → handlers consume it.
 
 ### Data Fetching Strategy
 
-- **Prefer joins over N+1 queries:** Use Drizzle relational queries or explicit joins when loading related data (e.g., event + deliveries, source + destinations). One round-trip beats N sequential queries.
-- **Independent queries in parallel:** When a handler needs data from unrelated tables (e.g., stats from events + deliveries + sources), use `Promise.all` — never sequential awaits for independent operations.
-- **Request-scoped tenant context:** `request.tenantId` is always available after auth middleware. Every query includes `WHERE tenant_id = ?` — this is enforced by convention, not by a query wrapper.
+- **Prefer joins over N+1 queries:** Use Drizzle relational queries or explicit joins when loading related data (e.g., event + deliveries, source + destinations).
+- **Independent queries in parallel:** When a handler needs data from unrelated tables, use `Promise.all` — never sequential awaits for independent operations.
 
 ## Gotchas & Lessons Learned
 
