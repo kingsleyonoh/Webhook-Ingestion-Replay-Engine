@@ -33,6 +33,16 @@ build/
 .env
 .env.local
 .env.*.local
+.env.production
+.env.staging
+.env.prod
+
+# Security-sensitive files (certificates, keys)
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
 
 # TypeScript
 *.tsbuildinfo
