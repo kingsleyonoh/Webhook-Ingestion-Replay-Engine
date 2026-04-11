@@ -85,11 +85,16 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
       });
 
       // Step 2: Get raw body buffer for signature verification
-      const rawBody = Buffer.from(
-        typeof request.body === "string"
-          ? request.body
-          : JSON.stringify(request.body)
-      );
+      // Uses preserved raw bytes from content type parser (avoids re-serialization
+      // which would break HMAC on non-canonical JSON)
+      const rawBody =
+        request.rawBody && request.rawBody.length > 0
+          ? request.rawBody
+          : Buffer.from(
+              typeof request.body === "string"
+                ? request.body
+                : JSON.stringify(request.body)
+            );
 
       // Step 3: Check payload size before any processing
       if (rawBody.length > config.maxPayloadBytes) {

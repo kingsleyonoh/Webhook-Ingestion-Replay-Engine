@@ -20,6 +20,7 @@ import {
   SourceNotFoundError,
   DestinationNotFoundError,
 } from "../lib/errors.js";
+import { validateDestinationUrl } from "../lib/url-validator.js";
 import { uuidParamSchema } from "./schemas/common.js";
 
 /** Source + destination path params */
@@ -110,6 +111,9 @@ async function handleCreateDestination(
       details
     );
   }
+
+  // SSRF protection: validate destination URL before persisting
+  validateDestinationUrl(bodyParse.data.url);
 
   // Verify source exists and belongs to tenant
   const sourceCheck = await db

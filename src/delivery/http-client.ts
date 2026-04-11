@@ -6,6 +6,8 @@
  * a maximum redirect count (default 3).
  */
 
+import { resolveAndValidateUrl } from "../lib/url-validator.js";
+
 /** Maximum response body size to store (4KB) */
 const MAX_RESPONSE_BODY_BYTES = 4096;
 
@@ -45,6 +47,21 @@ export async function deliverWebhook(params: {
   const body = JSON.stringify(payload);
 
   const startMs = performance.now();
+
+  // SSRF pre-flight: validate URL + resolve DNS to check for private IPs
+  try {
+    await resolveAndValidateUrl(params.url);
+  } catch (err) {
+    return {
+      statusCode: 0,
+      responseBody: "",
+      durationMs: Math.round(performance.now() - startMs),
+      error:
+        err instanceof Error
+          ? `SSRF blocked: ${err.message}`
+          : "SSRF blocked: unsafe URL",
+    };
+  }
 
   let currentUrl = params.url;
   let redirectCount = 0;

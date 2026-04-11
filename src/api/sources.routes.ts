@@ -187,12 +187,9 @@ async function handleCreateSource(
       },
     });
   } catch (err: unknown) {
-    const pgError = err as {
-      code?: string;
-      constraint_name?: string;
-      constraint?: string;
-    };
-    if (pgError.code === "23505") {
+    // Drizzle-orm v0.45+ wraps DB errors in DrizzleQueryError with .cause
+    const pgError = extractPgError(err);
+    if (pgError?.code === "23505") {
       const constraintName =
         pgError.constraint_name ?? pgError.constraint ?? "";
       if (constraintName.includes("slug")) {
@@ -201,6 +198,24 @@ async function handleCreateSource(
     }
     throw err;
   }
+}
+
+/** Extract PostgreSQL error from drizzle-orm's DrizzleQueryError wrapper */
+interface PgError {
+  code?: string;
+  constraint_name?: string;
+  constraint?: string;
+}
+
+function extractPgError(err: unknown): PgError | null {
+  const direct = err as PgError;
+  if (direct?.code) return direct;
+
+  // Drizzle-orm v0.45+ wraps in DrizzleQueryError with .cause
+  const wrapped = err as { cause?: PgError };
+  if (wrapped?.cause?.code) return wrapped.cause;
+
+  return null;
 }
 
 async function handleUpdateSource(

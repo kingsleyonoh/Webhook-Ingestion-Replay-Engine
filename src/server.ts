@@ -7,6 +7,7 @@
 
 import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import helmet from "@fastify/helmet";
 import { errorHandlerPlugin } from "./api/middleware/error-handler.js";
 import { rateLimitPlugin } from "./api/middleware/rate-limit.js";
 import tenantRoutes from "./api/tenants.routes.js";
@@ -21,12 +22,14 @@ import { ingestionPlugin } from "./ingestion/handler.js";
 import { setupGracefulShutdown } from "./shutdown.js";
 
 /**
- * Declare the tenantId request decorator type.
- * After auth middleware resolves, request.tenantId holds the UUID.
+ * Declare request decorator types.
+ * - tenantId: set by auth middleware after API key resolution
+ * - rawBody: preserved by content type parser for HMAC signature verification
  */
 declare module "fastify" {
   interface FastifyRequest {
     tenantId: string;
+    rawBody: Buffer;
   }
 }
 
@@ -41,10 +44,12 @@ function registerRawBodyParser(app: FastifyInstance): void {
     "application/json",
     { parseAs: "buffer" },
     (
-      _request,
+      request,
       body: Buffer,
       done: (err: Error | null, result?: unknown) => void
     ) => {
+      // Preserve raw bytes for HMAC signature verification
+      request.rawBody = body;
       try {
         const parsed: unknown =
           body.length > 0 ? JSON.parse(body.toString()) : {};
@@ -60,10 +65,12 @@ function registerRawBodyParser(app: FastifyInstance): void {
     "*",
     { parseAs: "buffer" },
     (
-      _request,
+      request,
       body: Buffer,
       done: (err: Error | null, result?: unknown) => void
     ) => {
+      // Preserve raw bytes for HMAC signature verification
+      request.rawBody = body;
       done(null, body);
     }
   );
@@ -92,7 +99,24 @@ export async function buildApp(): Promise<FastifyInstance> {
   // Decorate request with tenantId (default empty — set by auth middleware)
   app.decorateRequest("tenantId", "");
 
-  // Register error handler (must be first — catches all downstream errors)
+  // Decorate request with rawBody (for HMAC signature verification)
+  // Fastify 5.x requires getter/setter for reference types (Buffer, Object, Array)
+  app.decorateRequest("rawBody", {
+    getter() {
+      return (this as unknown as Record<string, Buffer>)._rawBody ?? Buffer.alloc(0);
+    },
+    setter(value: Buffer) {
+      (this as unknown as Record<string, Buffer>)._rawBody = value;
+    },
+  });
+
+  // Register security headers (must be first — applies to all responses)
+  await app.register(helmet, {
+    // Disable CSP for API-only server (no HTML content)
+    contentSecurityPolicy: false,
+  });
+
+  // Register error handler (catches all downstream errors)
   await app.register(errorHandlerPlugin);
 
   // Register raw body parser for webhook signature verification
