@@ -22,6 +22,9 @@ import replayRoutes from "./replay/routes.js";
 import statsRoutes from "./api/stats.routes.js";
 import { ingestionPlugin } from "./ingestion/handler.js";
 import { setupGracefulShutdown } from "./shutdown.js";
+import { loadConfig } from "./config.js";
+import type { AppConfig } from "./config.js";
+import { createDeliveryWorker } from "./delivery/worker.js";
 
 /**
  * Declare request decorator types.
@@ -174,20 +177,34 @@ export async function buildApp(): Promise<FastifyInstance> {
 }
 
 /**
+ * Start production runtime services around an already-built Fastify app.
+ * Tests call this directly so worker startup cannot drift from server startup.
+ */
+export async function startRuntime(
+  app: FastifyInstance,
+  config: AppConfig
+): Promise<void> {
+  const worker = createDeliveryWorker({
+    databaseUrl: config.databaseUrl,
+    redisUrl: config.redisUrl,
+    concurrency: config.deliveryConcurrency,
+  });
+
+  setupGracefulShutdown({ app, worker });
+
+  await app.listen({ port: config.port, host: config.host });
+}
+
+/**
  * Production entry point — builds the app and starts listening.
  * Only runs when this file is executed directly (not imported in tests).
  */
 async function start(): Promise<void> {
-  const port = parseInt(process.env["PORT"] ?? "3000", 10);
-  const host = process.env["HOST"] ?? "0.0.0.0";
-
+  const config = loadConfig();
   const app = await buildApp();
 
-  // Register graceful shutdown handlers
-  setupGracefulShutdown({ app });
-
   try {
-    await app.listen({ port, host });
+    await startRuntime(app, config);
   } catch (err) {
     app.log.error(err);
     process.exit(1);
