@@ -119,6 +119,44 @@ describe("POST /api/sources (integration)", () => {
     createdSourceIds.push(body.source.id);
   });
 
+  it("should create an RSA-SHA256 source for Wise webhooks", async () => {
+    const slug = `wise-rsa-${Date.now()}`;
+    const publicKey = [
+      "-----BEGIN PUBLIC KEY-----",
+      "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvO8vXV+JksBzZAY6GhSO",
+      "XdoTCfhXaaiZ+qAbtaDBiu2AGkGVpmEygFmWP4Li9m5+Ni85BhVvZOodM9epgW3F",
+      "bA5Q1SexvAF1PPjX4JpMstak/QhAgl1qMSqEevL8cmUeTgcMuVWCJmlge9h7B1CS",
+      "D4rtlimGZozG39rUBDg6Qt2K+P4wBfLblL0k4C4YUdLnpGYEDIth+i8XsRpFlogx",
+      "CAFyH9+knYsDbR43UJ9shtc42Ybd40Afihj8KnYKXzchyQ42aC8aZ/h5hyZ28yVy",
+      "Oj3Vos0VdBIs/gAyJ/4yyQFCXYte64I7ssrlbGRaco4nKF3HmaNhxwyKyJafz19e",
+      "HwIDAQAB",
+      "-----END PUBLIC KEY-----",
+    ].join("\n");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sources",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": tenantApiKey,
+      },
+      payload: {
+        name: "Wise Business",
+        slug,
+        signature_header: "x-signature-sha256",
+        signature_algo: "rsa-sha256",
+        signing_secret: publicKey,
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body);
+    expect(body.source.signature_header).toBe("x-signature-sha256");
+    expect(body.source.signature_algo).toBe("rsa-sha256");
+    expect(body.source).not.toHaveProperty("signing_secret");
+    createdSourceIds.push(body.source.id);
+  });
+
   it("should return 409 for duplicate slug within the same tenant", async () => {
     const slug = `dup-slug-${Date.now()}`;
 

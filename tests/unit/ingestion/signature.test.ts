@@ -160,6 +160,64 @@ describe("Signature Verification (src/ingestion/signature.ts)", () => {
     });
   });
 
+  describe("RSA-SHA256", () => {
+    it("should accept a valid base64 RSA-SHA256 signature", async () => {
+      const { verifySignature } = await import(
+        "../../../src/ingestion/signature.js"
+      );
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+      });
+      const publicKeyPem = publicKey.export({
+        type: "spki",
+        format: "pem",
+      }) as string;
+      const signature = crypto
+        .sign("RSA-SHA256", rawBody, {
+          key: privateKey,
+          padding: crypto.constants.RSA_PKCS1_PADDING,
+        })
+        .toString("base64");
+
+      const result = verifySignature({
+        rawBody,
+        signatureHeader: signature,
+        signingSecret: publicKeyPem,
+        algorithm: "rsa-sha256",
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it("should reject a tampered body with a valid RSA-SHA256 signature", async () => {
+      const { verifySignature } = await import(
+        "../../../src/ingestion/signature.js"
+      );
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+        modulusLength: 2048,
+      });
+      const publicKeyPem = publicKey.export({
+        type: "spki",
+        format: "pem",
+      }) as string;
+      const signature = crypto
+        .sign("RSA-SHA256", rawBody, {
+          key: privateKey,
+          padding: crypto.constants.RSA_PKCS1_PADDING,
+        })
+        .toString("base64");
+
+      const result = verifySignature({
+        rawBody: Buffer.from(JSON.stringify({ event: "tampered" })),
+        signatureHeader: signature,
+        signingSecret: publicKeyPem,
+        algorithm: "rsa-sha256",
+      });
+
+      expect(result).toBe(false);
+    });
+  });
+
   describe("edge cases", () => {
     it("should handle empty body for SHA-256", async () => {
       const { verifySignature } = await import(

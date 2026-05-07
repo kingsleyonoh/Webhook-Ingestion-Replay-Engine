@@ -68,7 +68,7 @@ Both are configured by adding rows to the `destinations` table — no code chang
 
 - **Persist before processing** — every webhook is written to PostgreSQL before any delivery attempt
 - **At-least-once delivery** — BullMQ-backed delivery worker with exponential backoff retries
-- **Source-agnostic** — signature verification config (HMAC-SHA256, HMAC-SHA1, none) lives in the database
+- **Source-agnostic** — signature verification config (HMAC-SHA256, HMAC-SHA1, RSA-SHA256, none) lives in the database
 - **Multi-tenant** — every resource is scoped to a tenant via API key auth
 - **Dead-letter queue** — failed deliveries past max retries are inspected and replayed via REST API
 

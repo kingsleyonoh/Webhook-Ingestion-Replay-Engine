@@ -46,7 +46,7 @@ const createSourceBodySchema = z.object({
     ),
   signature_header: z.string().optional(),
   signature_algo: z
-    .enum(["hmac-sha256", "hmac-sha1", "none"])
+    .enum(["hmac-sha256", "hmac-sha1", "rsa-sha256", "none"])
     .optional(),
   signing_secret: z.string().optional(),
 });
@@ -65,7 +65,7 @@ const updateSourceBodySchema = z.object({
     .optional(),
   signature_header: z.string().optional(),
   signature_algo: z
-    .enum(["hmac-sha256", "hmac-sha1", "none"])
+    .enum(["hmac-sha256", "hmac-sha1", "rsa-sha256", "none"])
     .optional(),
   signing_secret: z.string().optional(),
   enabled: z.boolean().optional(),

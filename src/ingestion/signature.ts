@@ -1,6 +1,6 @@
 /**
- * HMAC signature verification for incoming webhooks.
- * Section 5.1 step 4, Section 6 — SHA-256, SHA-1, and `none` algorithms.
+ * Signature verification for incoming webhooks.
+ * Section 5.1 step 4, Section 6 — HMAC, RSA-SHA256, and `none` algorithms.
  *
  * Uses timing-safe comparison to prevent timing attacks.
  */
@@ -11,7 +11,7 @@ export interface VerifySignatureParams {
   rawBody: Buffer;
   signatureHeader: string;
   signingSecret: string;
-  algorithm: "hmac-sha256" | "hmac-sha1" | "none";
+  algorithm: "hmac-sha256" | "hmac-sha1" | "rsa-sha256" | "none";
   /** Extracted timestamp from header (milliseconds since epoch). */
   timestampMs?: number;
   /** Max signature age in ms (default 300000 = 5 min). Set to 0 to disable. */
@@ -30,6 +30,28 @@ function stripPrefix(signature: string): string {
     return signature.slice(5);
   }
   return signature;
+}
+
+function verifyRsaSha256(
+  rawBody: Buffer,
+  signatureHeader: string,
+  publicKeyPem: string
+): boolean {
+  try {
+    const signature = Buffer.from(stripPrefix(signatureHeader), "base64");
+    if (signature.length === 0) return false;
+    return crypto.verify(
+      "RSA-SHA256",
+      rawBody,
+      {
+        key: publicKeyPem,
+        padding: crypto.constants.RSA_PKCS1_PADDING,
+      },
+      signature
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -62,6 +84,10 @@ export function verifySignature(params: VerifySignatureParams): boolean {
     if (age > toleranceMs) {
       return false;
     }
+  }
+
+  if (algorithm === "rsa-sha256") {
+    return verifyRsaSha256(rawBody, signatureHeader, signingSecret);
   }
 
   // Map algorithm name to Node.js crypto algorithm

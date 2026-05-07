@@ -214,6 +214,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
       const algo = (source.signatureAlgo ?? "none") as
         | "hmac-sha256"
         | "hmac-sha1"
+        | "rsa-sha256"
         | "none";
 
       if (
