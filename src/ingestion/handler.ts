@@ -52,6 +52,44 @@ interface WebhookParams {
   sourceSlug: string;
 }
 
+interface ActiveDestination {
+  id: string;
+}
+
+function getMatchedDestinationIds(payload: unknown): Set<string> | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const matchedDestinationIds = (payload as Record<string, unknown>)[
+    "_matched_destination_ids"
+  ];
+
+  if (
+    !Array.isArray(matchedDestinationIds) ||
+    matchedDestinationIds.length === 0 ||
+    !matchedDestinationIds.every((id) => typeof id === "string")
+  ) {
+    return null;
+  }
+
+  return new Set(matchedDestinationIds);
+}
+
+function filterMatchedDestinations(
+  activeDestinations: ActiveDestination[],
+  payload: unknown
+): ActiveDestination[] {
+  const matchedDestinationIds = getMatchedDestinationIds(payload);
+  if (!matchedDestinationIds) {
+    return activeDestinations;
+  }
+
+  return activeDestinations.filter((dest) =>
+    matchedDestinationIds.has(dest.id)
+  );
+}
+
 async function ingestionHandler(app: FastifyInstance): Promise<void> {
   const config = loadConfig();
   const databaseUrl = config.databaseUrl;
@@ -292,9 +330,14 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
           )
         );
 
-      // Step 8: Enqueue delivery jobs for each active destination
-      if (activeDestinations.length > 0) {
-        const jobPromises = activeDestinations.map((dest) =>
+      const deliveryDestinations = filterMatchedDestinations(
+        activeDestinations,
+        request.body
+      );
+
+      // Step 8: Enqueue delivery jobs for each selected active destination
+      if (deliveryDestinations.length > 0) {
+        const jobPromises = deliveryDestinations.map((dest) =>
           deliverQueue.add("deliver", {
             eventId,
             destinationId: dest.id,
@@ -306,7 +349,7 @@ async function ingestionHandler(app: FastifyInstance): Promise<void> {
         reqLogger.info(
           {
             eventId,
-            destinationCount: activeDestinations.length,
+            destinationCount: deliveryDestinations.length,
           },
           "Delivery jobs enqueued"
         );

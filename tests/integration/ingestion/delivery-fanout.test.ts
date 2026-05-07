@@ -96,6 +96,8 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
   let app: FastifyInstance;
   let tenantId: string;
   let sourceId: string;
+  let enabledDestinationIds: string[];
+  let disabledDestinationId: string;
   let redis: Redis;
   const sourceSlug = `fanout-src-${Date.now()}`;
 
@@ -130,14 +132,20 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
     sourceId = sourceResult[0]!.id as string;
 
     // Create 3 enabled destinations + 1 disabled
-    await db.sql`
+    const destinationResult = await db.sql`
       INSERT INTO destinations (tenant_id, source_id, url, enabled)
       VALUES
         (${tenantId}, ${sourceId}, ${"https://dest1.example.com/hook"}, true),
         (${tenantId}, ${sourceId}, ${"https://dest2.example.com/hook"}, true),
         (${tenantId}, ${sourceId}, ${"https://dest3.example.com/hook"}, true),
         (${tenantId}, ${sourceId}, ${"https://disabled.example.com/hook"}, false)
+      RETURNING id, enabled
     `;
+    enabledDestinationIds = destinationResult
+      .filter((row) => row.enabled)
+      .map((row) => row.id as string);
+    disabledDestinationId = destinationResult.find((row) => !row.enabled)!
+      .id as string;
   });
 
   afterAll(async () => {
@@ -176,6 +184,62 @@ describe("Delivery fan-out — N active destinations (integration)", () => {
       expect(job.data).toHaveProperty("tenantId", tenantId);
       expect(job.data).toHaveProperty("destinationId");
     }
+
+    await deliverQueue.close();
+  });
+
+  it("should only enqueue matched destinations when payload scopes fan-out", async () => {
+    const deliverQueue = new Queue("deliver", {
+      connection: { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
+    });
+    const targetDestinationId = enabledDestinationIds[1]!;
+    const payload = JSON.stringify({
+      event: "fanout.scoped",
+      _matched_destination_ids: [targetDestinationId],
+      ts: Date.now(),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/webhooks/${sourceSlug}`,
+      headers: { "content-type": "application/json" },
+      payload: Buffer.from(payload),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    const jobs = await deliverQueue.getWaiting();
+    const ourJobs = jobs.filter((j) => j.data.eventId === body.eventId);
+
+    expect(ourJobs).toHaveLength(1);
+    expect(ourJobs[0]!.data.destinationId).toBe(targetDestinationId);
+
+    await deliverQueue.close();
+  });
+
+  it("should not enqueue disabled destinations from scoped payloads", async () => {
+    const deliverQueue = new Queue("deliver", {
+      connection: { url: process.env["REDIS_URL"] ?? "redis://localhost:6379" },
+    });
+    const payload = JSON.stringify({
+      event: "fanout.scoped-disabled",
+      _matched_destination_ids: [disabledDestinationId],
+      ts: Date.now(),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/webhooks/${sourceSlug}`,
+      headers: { "content-type": "application/json" },
+      payload: Buffer.from(payload),
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = JSON.parse(response.body);
+    const jobs = await deliverQueue.getWaiting();
+    const ourJobs = jobs.filter((j) => j.data.eventId === body.eventId);
+
+    expect(ourJobs).toHaveLength(0);
 
     await deliverQueue.close();
   });
