@@ -20,6 +20,34 @@ interface WorkerConfig {
   concurrency?: number;
 }
 
+function getMatchedDestinationIds(payload: unknown): Set<string> | null {
+  if (typeof payload === "string") {
+    try {
+      return getMatchedDestinationIds(JSON.parse(payload));
+    } catch {
+      return null;
+    }
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const matchedDestinationIds = (payload as Record<string, unknown>)[
+    "_matched_destination_ids"
+  ];
+
+  if (
+    !Array.isArray(matchedDestinationIds) ||
+    matchedDestinationIds.length === 0 ||
+    !matchedDestinationIds.every((id) => typeof id === "string")
+  ) {
+    return null;
+  }
+
+  return new Set(matchedDestinationIds);
+}
+
 /**
  * Process a single delivery job.
  * Exported separately for direct testing without BullMQ worker lifecycle.
@@ -140,7 +168,8 @@ export async function processDeliveryJob(
         sql,
         eventId,
         tenantId,
-        event.source_id
+        event.source_id,
+        event.payload
       );
     }
   } finally {
@@ -242,7 +271,8 @@ async function updateEventStatusIfAllDelivered(
   sql: postgres.Sql,
   eventId: string,
   tenantId: string,
-  sourceId: string
+  sourceId: string,
+  payload: unknown
 ): Promise<void> {
   // Get all enabled destinations for this source
   const enabledDests = await sql<{ id: string }[]>`
@@ -251,6 +281,13 @@ async function updateEventStatusIfAllDelivered(
   `;
 
   if (enabledDests.length === 0) return;
+
+  const matchedDestinationIds = getMatchedDestinationIds(payload);
+  const requiredDests = matchedDestinationIds
+    ? enabledDests.filter((dest) => matchedDestinationIds.has(dest.id))
+    : enabledDests;
+
+  if (requiredDests.length === 0) return;
 
   // For each destination, check if there's a 'success' delivery for this event
   const successDests = await sql<{ destination_id: string }[]>`
@@ -261,11 +298,11 @@ async function updateEventStatusIfAllDelivered(
       AND status = 'success'
   `;
 
-  const enabledIds = new Set(enabledDests.map((d) => d.id));
+  const requiredIds = new Set(requiredDests.map((d) => d.id));
   const successIds = new Set(successDests.map((d) => d.destination_id));
 
-  // Check if every enabled destination has a success delivery
-  const allDelivered = [...enabledIds].every((id) => successIds.has(id));
+  // Check if every required destination has a success delivery
+  const allDelivered = [...requiredIds].every((id) => successIds.has(id));
 
   if (allDelivered) {
     await sql`

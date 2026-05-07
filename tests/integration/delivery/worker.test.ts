@@ -464,6 +464,58 @@ describe("Delivery worker — processDeliveryJob (integration)", () => {
       expect(finalEvent[0]!.status).toBe("delivered");
     });
 
+    it("should mark scoped events delivered when matched destinations succeed", async () => {
+      const scopedSource = await db.sql`
+        INSERT INTO sources (tenant_id, name, slug, enabled)
+        VALUES (${tenantId}, ${`scoped-source-${Math.random()}`}, ${`scoped-slug-${Math.random()}`}, true)
+        RETURNING id
+      `;
+      const scopedSourceId = scopedSource[0]!.id as string;
+      const path1 = `/scoped-1-${Math.random()}`;
+      const path2 = `/scoped-2-${Math.random()}`;
+
+      const d1 = await db.sql`
+        INSERT INTO destinations (tenant_id, source_id, url, method, timeout_ms, max_retries, backoff_base_ms, enabled)
+        VALUES (${tenantId}, ${scopedSourceId}, ${`${destUrl}${path1}`}, 'POST', 5000, 5, 1000, true)
+        RETURNING id
+      `;
+      const d2 = await db.sql`
+        INSERT INTO destinations (tenant_id, source_id, url, method, timeout_ms, max_retries, backoff_base_ms, enabled)
+        VALUES (${tenantId}, ${scopedSourceId}, ${`${destUrl}${path2}`}, 'POST', 5000, 5, 1000, true)
+        RETURNING id
+      `;
+
+      const did1 = d1[0]!.id as string;
+      const did2 = d2[0]!.id as string;
+      const idemKey = `agg-scoped-${ts}-${Math.random()}`;
+      const event = await db.sql`
+        INSERT INTO events (tenant_id, source_id, idempotency_key, headers, payload, status)
+        VALUES (
+          ${tenantId}, ${scopedSourceId}, ${idemKey},
+          '{"content-type":"application/json"}'::jsonb,
+          ${JSON.stringify({
+            data: "scoped-test",
+            _matched_destination_ids: [did1],
+          })}::jsonb,
+          'pending'
+        )
+        RETURNING id
+      `;
+      const eid = event[0]!.id as string;
+
+      nock(destUrl).post(path1).reply(200, "ok");
+      await processDeliveryJob(
+        { eventId: eid, destinationId: did1, tenantId },
+        { databaseUrl: DATABASE_URL, redisUrl: REDIS_URL }
+      );
+
+      const finalEvent = await db.sql`
+        SELECT status FROM events WHERE id = ${eid}
+      `;
+      expect(finalEvent[0]!.status).toBe("delivered");
+      expect(did2).toBeTruthy();
+    });
+
     it("should keep event as pending when partial success (one destination fails)", async () => {
       // Use isolated source so other test destinations don't interfere
       const partialSource = await db.sql`
